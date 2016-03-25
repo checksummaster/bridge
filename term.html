@@ -1,0 +1,249 @@
+<html>
+<body>
+
+<script type="text/javascript">
+
+var ws;
+var cursortimer;
+
+function getArg (args, opts){
+	opts = opts || {}
+	args = args || '';
+	var arr = [];
+
+	var current = null;
+	var quoted = null;
+	var quoteType = null;
+
+	function addcurrent(){
+		if(current){
+			// trim extra whitespace on the current arg
+			arr.push(current.trim());
+			current = null;
+		}
+	}
+
+	// remove escaped newlines
+	args = args.replace(/\\\n/g, '');
+
+	for(var i=0; i<args.length; i++){
+		var c = args.charAt(i);
+
+		if(c==" "){
+			if(quoted){
+				quoted += c;
+			}
+			else{
+				addcurrent();
+			}
+		}
+		else if(c == '\'' || c == '"'){
+			if(quoted){
+				quoted += c;
+				// only end this arg if the end quote is the same type as start quote
+				if (quoteType === c) {
+					// make sure the quote is not escaped
+					if (quoted.charAt(quoted.length - 2) !== '\\') {
+						arr.push(quoted);
+						quoted = null;
+						quoteType = null;
+					}
+				}
+			}
+			else{
+				addcurrent();
+				quoted = c;
+				quoteType = c;
+			}
+		}
+		else{
+			if(quoted){
+				quoted += c;
+			}
+			else{
+				if(current){
+					current += c;
+				}
+				else{
+					current = c;
+				}
+			}
+		}
+	}
+
+	addcurrent();
+
+	if(opts.removequotes){
+		arr = arr.map(function(arg){
+			if(!arg.match(/\s/)) 
+				return arg
+			return arg.replace(/^"|"$/g, "");
+		});
+	}
+
+	return arr;
+}
+
+function log(s)
+{
+	var elem = document.getElementById('log');
+	elem.innerHTML += s;
+}
+
+
+
+function connect()
+{
+	
+	ws = new WebSocket('ws://localhost:9002');
+
+	ws.onopen = function () {
+		document.getElementById('log').innerHTML = "";
+		enablerun();
+	}
+
+	ws.onclose = function (event) {
+		if (event.code === 1000) {
+	        reason = null;
+	    } else if (event.code === 1001) {
+	        reason = "An endpoint is \"going away\", such as a server going down or a browser having navigated away from a page.";
+	    } else if (event.code === 1002) {
+	        reason = "An endpoint is terminating the connection due to a protocol error";
+	    } else if (event.code === 1003) {
+	        reason = "An endpoint is terminating the connection because it has received a type of data it cannot accept (e.g., an endpoint that understands only text data MAY send this if it receives a binary message).";
+	    } else if (event.code === 1004) {
+	        reason = "Reserved. The specific meaning might be defined in the future.";
+	    } else if (event.code === 1005) {
+	        reason = "No status code was actually present.";
+	    } else if (event.code === 1006) {
+	        reason = "The connection was closed abnormally, e.g., without sending or receiving a Close control frame";
+	    } else if (event.code === 1007) {
+	        reason = "An endpoint is terminating the connection because it has received data within a message that was not consistent with the type of the message (e.g., non-UTF-8 [http://tools.ietf.org/html/rfc3629] data within a text message).";
+	    } else if (event.code === 1008) {
+	        reason = "An endpoint is terminating the connection because it has received a message that \"violates its policy\". This reason is given either if there is no other sutible reason, or if there is a need to hide specific details about the policy.";
+	    } else if (event.code === 1009) {
+	        reason = "An endpoint is terminating the connection because it has received a message that is too big for it to process.";
+	    } else if (event.code === 1010) { // Note that this status code is not used by the server, because it can fail the WebSocket handshake instead.
+	        reason = "An endpoint (client) is terminating the connection because it has expected the server to negotiate one or more extension, but the server didn't return them in the response message of the WebSocket handshake. <br /> Specifically, the extensions that are needed are: " + event.reason;
+	    } else if (event.code === 1011) {
+	        reason = "A server is terminating the connection because it encountered an unexpected condition that prevented it from fulfilling the request.";
+	    } else if (event.code === 1015) {
+	        reason = "The connection was closed due to a failure to perform a TLS handshake (e.g., the server certificate can't be verified).";
+	    } else {
+	        reason = "Unknown reason";
+	    }
+
+	    if (reason !== null ) {
+	        log('<font color="red">'+ reason + '</font>\n');
+	    }
+		
+		setTimeout(function(){ connect(); }, 1000);
+	};
+
+	ws.onerror = function (error) {
+		//log('<font color="red">WebSocket Error ' + error+ ' </font>\n');
+	};
+
+	ws.onmessage = function (e) {
+	  	var data = JSON.parse(e.data);
+		switch (data.type) {
+			case "stdout":
+				log('<font color="black">' + data.message +  "</font>");
+				break;
+			case "stderr":
+				log('<font color="red">' + data.message +  "</font>");
+				break;
+			case "event":
+				if (data.message === "runend") {
+					enablerun();	
+				}
+				break;
+		}
+	};
+}
+
+function enablerun()
+{
+	document.getElementById('start1').disabled = false;
+	document.getElementById('start2').disabled = false;
+	document.getElementById('kill').disabled = true;
+	log(">_");
+	cursortimer = setInterval(function() {
+		var elem = document.getElementById('log');
+		c = "_";
+		if (elem.innerHTML.substr(elem.innerHTML.length-1) === '_') {
+			c = " ";
+		}
+		elem.innerHTML = elem.innerHTML.slice(0, -1) + c;
+
+	}, 500);
+}
+
+function disablerun()
+{
+	document.getElementById('start1').disabled = true;
+	document.getElementById('start2').disabled = true;
+	document.getElementById('kill').disabled = false;
+	window.clearInterval(cursortimer);
+
+	var elem = document.getElementById('log');
+	elem.innerHTML = elem.innerHTML.slice(0, -1);
+}
+
+function run(str) {
+
+
+	var json = {
+		"command":"run", 
+		"args":getArg(str, {"removequotes": true}),
+		"id":1
+	};
+
+	if (ws.readyState !== ws.CLOSED) {
+		disablerun();
+		
+		log('<font color="green">run ' + json.args.join(' ') + ' </font>\n');
+		
+		var str = JSON.stringify(json);
+		ws.send(str);
+	}
+}
+
+function start1() {
+	run("/bin/ls -ls");
+}
+
+function start2() {
+	run("./test.sh");
+}
+
+function kill() {
+	if (ws.readyState !== ws.CLOSED) {
+		ws.close();
+	}
+}
+
+function init() {
+	disablerun();
+	connect();
+}
+
+function clearscreen() {
+	document.getElementById('log').innerHTML = "";
+	if (document.getElementById('start1').disabled === false ) {
+		log(">_");
+	}
+}
+
+</script>
+<div id="container">
+<button id="start1" onclick="start1();">Start(1)</button>
+<button id="start2" onclick="start2();">Start(2)</button>
+<button id="kill" onclick="kill();">Kill</button>
+<button id="clear" onclick="clearscreen();">clear</button>
+<pre id="log"></pre>
+<div>
+
+<body onload="init();">
+
+</html>

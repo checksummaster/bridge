@@ -1,0 +1,74 @@
+<html>
+<body>
+<canvas id='target' width="800" height="480" ></canvas>
+
+<script>
+
+var sizex = 800;
+var sizey = 480;
+
+function blob2canvas(canvas,blob){
+    var img = new Image(sizex, sizey);
+    var ctx = canvas.getContext('2d');
+    img.onload = function () {
+        ctx.drawImage(img,0,0);
+    }
+    img.src = window.URL.createObjectURL(blob);
+}
+
+function startreceiver(id,callback)
+{
+	var ws = new WebSocket('ws://localhost:9002');
+	//ws.binaryType = 'arraybuffer';
+	var str = JSON.stringify(
+	{
+		"command": "receiver",
+		"name": "test",
+		"id":id
+	})
+
+	ws.onopen = function () {
+		console.log('[open receiver]');
+  		ws.send(str); 
+	};
+
+	ws.onclose = function () {
+		console.log('[close receiver]'); 
+	};
+
+	ws.onerror = function (error) {
+	  	console.log('WebSocket Error ' + error);
+	};
+
+
+	ws.onmessage = function (e) {
+		var str = String.fromCharCode.apply(null, e.data);
+	  	callback(e.data);
+	};	
+}
+var c = 0;
+var receiver = startreceiver(4,function(v){
+
+	console.log("receive " + c);
+	c++;
+
+	blob2canvas(document.getElementById("target"),v)
+
+/*	
+	var canvas  = document.getElementById("target");
+	var context = canvas.getContext("2d");
+	var imgData=context.createImageData(sizex,sizey);
+
+	var data = new Uint8Array(v);
+	for (var i=0;i<imgData.data.length;i++)
+	{
+		imgData.data[i]=data[i];
+
+	}
+	context.putImageData(imgData, 0, 0); */
+});
+
+
+</script>
+</body>
+</html>

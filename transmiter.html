@@ -1,0 +1,145 @@
+<html>
+<body>
+<canvas id='source' width="800" height="480" ></canvas>
+
+<script>
+
+var sizex = 800;
+var sizey = 480;
+
+function starttransmitter(id,callback)
+{
+	var ws = new WebSocket('ws://localhost:9002');
+	//ws.binaryType = 'arraybuffer';
+	var str = JSON.stringify(
+	{
+		"command": "transmitter",
+		"name": "test",
+		"id":id
+	})
+
+	ws.onopen = function () {
+		console.log('[open transmitter]');
+  		ws.send(str); 
+  		callback(ws);
+	};
+
+	ws.onclose = function () {
+		console.log('[close transmitter]'); 
+	};
+
+	ws.onerror = function (error) {
+	  	console.log('WebSocket Error ' + error);
+	};
+
+
+	ws.onmessage = function (e) {
+	  	console.log('receive: ' + e.data);
+	};	
+
+
+} 
+
+function dataURItoBlob(dataURI) {
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    var byteString;
+    if (dataURI.split(',')[0].indexOf('base64') >= 0)
+        byteString = atob(dataURI.split(',')[1]);
+    else
+        byteString = unescape(dataURI.split(',')[1]);
+
+    // separate out the mime component
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+    // write the bytes of the string to a typed array
+    var ia = new Uint8Array(byteString.length);
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+
+    return new Blob([ia], {type:mimeString});
+}
+
+
+var stop = false;
+
+starttransmitter(5, function(transmitter) {
+
+	var x =  0;
+	var y = 15;
+	var speedx = 5;
+	var speedy = 5;
+
+	function animate() {
+
+	    reqAnimFrame = window.mozRequestAnimationFrame    ||
+	                window.webkitRequestAnimationFrame ||
+	                window.msRequestAnimationFrame     ||
+	                window.oRequestAnimationFrame
+	                ;
+	                
+	    
+
+	    x += speedx;
+	    y += speedy;
+
+	    if(x <= 0 || x >= sizex-25){
+	        speedx = -speedx;
+	    }
+
+	    if(y <= 0 || y >= sizey-25){
+	        speedy = -speedy;
+	    }
+
+
+
+	    draw();
+
+	    if (transmitter.readyState !== transmitter.CLOSED) window.setTimeout(function() {reqAnimFrame(animate);},10)
+	    //reqAnimFrame(animate);
+	}
+
+	var c = 0;
+	function draw() {
+
+		console.log("send " + c);
+		c++;
+
+	    var canvas  = document.getElementById("source");
+	    var context = canvas.getContext("2d");
+
+
+	    context.fillStyle = "rgb(200,0,0)";
+	    context.fillRect(0,0,sizex,sizey);
+
+	    for ( var i = 0; i < 20 ; i ++ ) {
+	    	r = Math.floor(Math.random()*255);
+	    	g = Math.floor(Math.random()*255);
+	    	b = Math.floor(Math.random()*255);
+	    	context.fillStyle = "rgb("+r+"," + g + "," + b + ")";
+	    	xp = Math.floor(Math.random()*sizex);
+	    	yp = Math.floor(Math.random()*sizey);
+	    	w = Math.floor(Math.random()*sizex);
+	    	h = Math.floor(Math.random()*sizey);
+	    	context.fillRect(xp-w/2, yp-h/2, w, h);
+	    }
+
+	    context.fillStyle = "rgb(0,200,0)";
+	   	context.fillRect(x, y, 25, 25);
+		
+		// jpeg
+		context = 0;
+		var uri = canvas.toDataURL("image/jpeg", 1.0);
+		var blob = dataURItoBlob(uri);
+		if (transmitter.readyState !== transmitter.CLOSED)  transmitter.send(blob);
+		
+	}
+
+	if (!stop) animate();
+});
+</script>
+
+
+
+</body>
+</html>

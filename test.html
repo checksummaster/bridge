@@ -1,0 +1,77 @@
+<html>
+<body>
+<script type="text/javascript">
+
+function log(s)
+{
+
+	console.log(s);
+	document.getElementById('log').innerHTML +=  '<font color="gray">' + s + "</font><br>";
+}
+
+function logJson(s)
+{
+	var line = "";
+
+	switch (s.type) {
+		case "stdout":
+			line += '<font color="black">';
+			line += "----"+s.id + "----" + "<pre>" +  s.message + "</pre>" + "</font><br>";
+			break;
+		case "stderr":
+			line += '<font color="red">';
+			line += "----"+s.id + "----" + "<pre>" +  s.message + "</pre>" + "</font><br>";
+			break;
+		default:
+			line += '<font color="green">';
+			line += "----"+s.id + "----&nbsp&nbsp&nbsp&nbsp"   +  s.message + "</font><br>";
+			break;
+
+	}
+
+	
+	document.getElementById('log').innerHTML += line;
+}
+	
+function testcommand(json)
+{
+	var str = JSON.stringify(json);
+	
+	var ws = new WebSocket('ws://localhost:9002');
+
+	ws.onopen = function () {
+		log('send ' + str);
+  		ws.send(str); 
+	};
+
+	ws.onclose = function () {
+		log("[close " + json.id + "]"); 
+	};
+
+	ws.onerror = function (error) {
+	  	log('WebSocket Error ' + error);
+	};
+
+
+	ws.onmessage = function (e) {
+	  	//log('receive: ' + e.data);
+	  	var data = JSON.parse(e.data);
+	  	logJson(data);
+
+	  	if ( data.type === "event" && data.message === "runend") {
+	  		ws.close();
+	  	}
+	};
+}
+
+testcommand({"command":"run", "args":["./test.sh"], "id":1});
+testcommand({"command":"run", "args":["./test.sh"], "id":2});
+testcommand({"command":"run", "args":["/bin/ls", "-ls"], "id":3});
+
+</script>
+
+<div id="log"></div>
+
+<body>
+
+</html>

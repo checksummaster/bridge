@@ -1,0 +1,73 @@
+////////
+// Log command
+////////
+{
+	"command": "log",
+	"value": "this is a log"
+	"id": 1
+}
+
+To see logs and reset it
+http://localhost:9002/logs
+
+////////
+// run
+////////
+{
+	"command": "run"
+	"args": "command to run and it argument"
+}
+
+send 		{"command":"run", "args":["./test.sh"], "id":2} 
+onmessage 	{"id": 2, "message": "runstart", "type": "event"} 
+onmessage   {"id": 2, "message": "test\n", "type": "stdout"} 
+onmessage   {"id": 2, "message": "number\n", "type": "stdout"} 
+onmessage   {"id": 2, "message": "one\n", "type": "stdout"} 
+onmessage   {"id": 2, "message": "ls: /DontExist: No such file or directory\n", "type": "stderr"} 
+onmessage   {"id": 2, "message": "runend", "type": "event"} 
+
+send 		{"command":"run", "args":["/bin/ls", "-ls"], "id":2} 
+onmessage	{"id": 2, "message": "runstart", "type": "event"} 
+onmessage	{"id": 2, "message": "total 26704\n3520 -rwxr-xr-x   1 alex  staff  1801768 21 Mar 21:15 a.out\n   8 -rwxr-xr-x   1 alex  staff      156 22 Mar 09:56 arm.sh\n   0 drwxr-xr-x  22 alex  staff      748 21 Mar 21:13 asio\n3872 -rw-r--r--@  1 alex  staff  1979635 21 Mar 21:13 asio-1.10.6.tar.gz\n4048 -rwxr-xr-x   1 alex  staff  2072020 21 Mar 22:36 bridge\n4488 -rwxrwxr-x   1 alex  staff  2295029 22 Mar 09:56 bridge.arm\n  40 -rw-r--r--   1 alex  staff    16769 23 Mar 09:48 bridge.cpp\n4168 -rwxr-xr-x   1 alex  staff  2132072 23 Mar 09:48 bridge.darwin\n4632 -rwxrwxr-x   1 alex  staff  2368776 22 Mar 09:52 bridge.linux\n   8 -rw-r--r--   1 alex  staff      234 22 Mar 13:48 command.txt\n   8 -rwxr-xr-x   1 alex  staff       76 22 Mar 09:39 darwin.sh\n  48 -rw-r--r--   1 alex  staff    21827  9 Dec 13:18 json11.cpp\n  24 -rw-r--r--   1 alex  staff     8503  9 Dec 13:18 json11.hpp\n   8 -rwxr-xr-x   1 alex  staff       75 22 Mar 09:41 linux.sh\n   8 -rwxr-xr-x   1 alex  staff       80 23 Mar 09:39 test.sh\n   0 drwx------  31 alex  staff     1054 21 Mar ", "type": "stdout"} 
+onmessage	{"id": 2, "message": "20:49 websocketpp\n   0 drwx------  20 alex  staff      680 21 Mar 20:47 websocketpp-master\n1824 -rw-r--r--@  1 alex  staff   931762 21 Mar 17:02 websocketpp-master.zip\n", "type": "stdout"} 
+onmessage	{"id": 2, "message": "runend", "type": "event"} 
+
+
+----- test.sh -------
+#!/bin/sh
+
+echo test
+sleep 1
+echo number
+sleep 1
+echo one
+sleep 1
+ls /DontExist
+----- test.sh -------
+
+
+////////
+// Receiver - emit
+////////
+
+on receiver side
+{
+	"command": "receiver",
+	"name": "receiver name"
+}
+
+... receive binary data here
+
+close connection to end reception
+
+on transmitter side
+{
+	"command": "transmitter",
+	"name": "receiver name",
+}
+
+... Send binary data here
+
+Close connection to end transmission
+
+
