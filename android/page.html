@@ -1,0 +1,97 @@
+<html>
+<body>
+<canvas id='target' width="800" height="480" ></canvas>
+<pre id='log'></pre>
+
+<script>
+
+var canvas = document.getElementById("target");
+var ctx = canvas.getContext('2d');
+
+canvas.addEventListener('mousedown',function(ev) {
+
+	var x = 
+
+	receiver.ws.send( JSON.stringify({
+			"command": "minitouch",
+			"id":1,
+			"value": "d 0 " + Math.floor(ev.clientY*1440/480) + " " + Math.floor((800-ev.clientX)*2560/800) + " 50\nc\n"
+	}));
+});
+
+canvas.addEventListener('mousemove',function(ev) {
+
+	receiver.ws.send( JSON.stringify({
+			"command": "minitouch",
+			"id":1,
+			"value": "m 0 " + Math.floor(ev.clientY*1440/480) + " " + Math.floor((800-ev.clientX)*2560/800) + " 50\nc\n"
+	}));
+
+	//log("d 0 " + (ev.clientX*2560/800) + " " + (ev.clientY*1440/480) + " 50\n");
+});
+
+canvas.addEventListener('mouseup',function(ev) {
+	receiver.ws.send( JSON.stringify({
+			"command": "minitouch",
+			"id":1,
+			"value": "u 0\nc\n"
+	}));
+});
+
+function log(message){
+    document.getElementById('log').innerHTML += message;
+}
+
+function startreceiver(callback)
+{
+	this.ws = new WebSocket('ws://localhost:9002');
+	//ws.binaryType = 'arraybuffer';
+
+	this.str = [
+		JSON.stringify({
+			"command": "minicap",
+			"id":1,
+			"resolution": "480x800/90",
+		})
+	];
+
+	this.ws.onopen = function () {
+		log('[open receiver]\n');
+  		this.ws.send(this.str[0]); 
+	}.bind(this);
+
+	this.ws.onclose = function () {
+		log('[close receiver]\n'); 
+	};
+
+	this.ws.onerror = function (error) {
+	  	log('WebSocket Error ' + error + '\n');
+	};
+
+	this.ws.onmessage = function (e) {
+		if (typeof e.data === "string" ) {
+			log(e.data + '\n');
+
+		}
+		else {
+			var str = String.fromCharCode.apply(null, e.data);
+	  		callback(e.data);
+	  	}
+	};	
+}
+
+var receiver = new startreceiver(function(v){
+	var img = new Image();
+    
+    img.onload = function () {
+    	canvas.width = img.width;
+    	canvas.height = img.height;
+        ctx.drawImage(img,0,0);
+    }
+    img.src = window.URL.createObjectURL(v);
+});
+
+
+</script>
+</body>
+</html>

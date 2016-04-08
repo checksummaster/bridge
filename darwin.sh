@@ -1,1 +1,2 @@
-g++ -std=c++11 bridge.cpp json11.cpp -I . -I ./asio/include -o bridge.darwin
+g++ -std=c++11 bridge.cpp json11.cpp /usr/local/Cellar/d-bus/1.10.6/lib/libdbus-1.a -I . -I ./asio/include -I /usr/local/lib/dbus-1.0/include -I /usr/local/include/dbus-1.0  -o bridge.darwin
+#g++ -std=c++11 imagetransmiter.cpp json11.cpp /usr/local/Cellar/d-bus/1.10.6/lib/libdbus-1.a -I . -I ./asio/include -I /usr/local/lib/dbus-1.0/include -I /usr/local/include/dbus-1.0  -o imagetransmiter.darwin

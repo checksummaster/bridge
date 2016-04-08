@@ -1,7 +1,11 @@
 #define ASIO_STANDALONE
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
+#include <websocketpp/client.hpp>
 #include "json11.hpp"
+
+#include <dbus/dbus.h>
+#include <stdint.h>
 
 typedef websocketpp::server<websocketpp::config::asio> server;
 server _server;
@@ -168,6 +172,8 @@ bool checkrun(struct _rundata *data)
     return ret;
 }
 
+
+void minicapcheck();
 void on_timer(websocketpp::lib::error_code const & ec) {
   
     for (std::vector<struct _rundata *>::iterator it = rundata.begin(); it !=  rundata.end(); ++it) {
@@ -177,6 +183,8 @@ void on_timer(websocketpp::lib::error_code const & ec) {
     		break;
     	}
     }
+
+    minicapcheck();
 
   	_server.set_timer(10,on_timer);
 }
@@ -311,6 +319,310 @@ void transmit(websocketpp::connection_hdl hdl,  server::message_ptr msg ) {
 	}
 }
 
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+//
+// DBUS
+//
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+/*
+DBusConnection dbus_start()
+{
+	DBusConnection *hmi_bus;
+	DBusError error;
+	hmi_bus = dbus_connection_open("unix:path=/tmp/dbus_hmi_socket", &error);
+
+	if (!hmi_bus) {
+		printf("DBUS: failed to connect to HMI bus: %s: %s\n", error.name, error.message);
+	}
+
+	if (!dbus_bus_register(hmi_bus, &error)) {
+		printf("DBUS: failed to register with HMI bus: %s: %s\n", error.name, error.message);
+	}
+	return hmi_bus;
+}
+
+
+void dbus_get(DBusConnection *hmi_bus) {
+
+//	const char * 	destination,
+//const char * 	path,
+//const char * 	iface,
+//const char * 	method 
+
+
+	DBusMessage *msg = dbus_message_new_method_call("com.jci.BLM_TIME", "/com/jci/BLM_TIME", "com.jci.BLM_TIME", "GetClock");
+	DBusPendingCall *pending = NULL;
+
+	if (!msg) {
+		printf("DBUS: failed to create message \n");
+	}
+
+	if (!dbus_connection_send_with_reply(hmi_bus, msg, &pending, -1)) {
+		printf("DBUS: failed to send message \n");
+	}
+
+	dbus_connection_flush(hmi_bus);
+	dbus_message_unref(msg);
+
+	dbus_pending_call_block(pending);
+	msg = dbus_pending_call_steal_reply(pending);
+	if (!msg) {
+	   printf("DBUS: received null reply \n");
+	}
+
+	dbus_uint32_t nm_hour;
+	dbus_uint32_t nm_min;
+	dbus_uint32_t nm_timestamp;
+	dbus_uint64_t nm_calltimestamp;
+	if (!dbus_message_get_args(msg, &error, DBUS_TYPE_UINT32, &nm_hour,
+										  DBUS_TYPE_UINT32, &nm_min,
+										  DBUS_TYPE_UINT32, &nm_timestamp,
+										  DBUS_TYPE_UINT64, &nm_calltimestamp,
+										  DBUS_TYPE_INVALID)) {
+		printf("DBUS: failed to get result %s: %s\n", error.name, error.message);
+	}
+	
+	dbus_message_unref(msg);
+}
+
+
+
+void dbus_stop(DBusConnection *hmi_bus)
+{
+	dbus_connection_close(hmi_bus);
+}
+
+*/
+
+
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+//
+// Minicap
+//
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+
+struct minicapreceiver {
+	websocketpp::connection_hdl hdl;
+	int id;	
+	int sockfd;
+	int sockkb;
+	unsigned long readBannerBytes;
+	struct __attribute__ ((__packed__)) {
+		uint8_t bannerversion;
+		uint8_t bannersize;
+		int32_t pid;
+		int32_t width;
+		int32_t height;
+		int32_t targetwidth;
+		int32_t targetheight;
+		uint8_t orientation;
+		uint8_t quirks;
+
+	} banner;
+
+	uint32_t size;
+	uint32_t rsize;
+	unsigned long readSizeBytes;
+
+	uint8_t *buffer;
+	uint32_t buffersize;
+
+
+
+} *_minicapreceiver = NULL;
+
+void minicapclose()
+{
+	if ( _minicapreceiver ) {
+		close(_minicapreceiver->sockfd);
+		close(_minicapreceiver->sockkb);
+	}
+
+	delete _minicapreceiver;
+	_minicapreceiver = NULL;
+}
+
+void minicapcheck()
+{
+	if ( _minicapreceiver ) {
+		{
+			char buffer[1025*20];	   
+	    	bzero(buffer,sizeof(buffer));
+	    	int n = read(_minicapreceiver->sockkb,buffer,sizeof(buffer)-1);
+	    	if ( n != -1) {
+				json11::Json json = json11::Json::object {
+	    			{ "minitouch",buffer }
+				};
+
+				//printf("minitouch %s\n",json.dump().c_str());
+				_server.send(_minicapreceiver->hdl, json.dump() , websocketpp::frame::opcode::text);
+
+	    	}
+		}
+		char buffer[1025*20];	   
+	    bzero(buffer,sizeof(buffer));
+	    int n = read(_minicapreceiver->sockfd,buffer,sizeof(buffer)-1);
+	    if (n < 0)  {
+	    	//printf("ERROR , reading from socket\n");
+	    	//SendError(_minicapreceiver->hdl, "ERROR , reading from socket" , _minicapreceiver->id); 
+	    }
+	    else { 
+	    	char *p = buffer;
+	    	while(n) {
+		    	if (_minicapreceiver->readBannerBytes < 24 ) { // BANNER_SIZE = 24
+		    		uint8_t *pb = (uint8_t*)&_minicapreceiver->banner;
+		    		int bc = 24 - _minicapreceiver->readBannerBytes;
+		    		if (bc > n) bc = n;
+		    		memcpy(pb,p,bc);
+		    		n -= bc;
+		    		p += bc;
+		    		_minicapreceiver->readBannerBytes += bc;
+		    		if ( _minicapreceiver->readBannerBytes == 24 ) {
+		    			json11::Json json = json11::Json::object {
+			    			{ "bannerversion",_minicapreceiver->banner.bannerversion },
+			    			{ "bannersize",_minicapreceiver->banner.bannersize },
+			    			{ "width",_minicapreceiver->banner.width },
+			    			{ "height",_minicapreceiver->banner.height },
+			    			{ "targetwidth",_minicapreceiver->banner.targetwidth },
+			    			{ "targetheight",_minicapreceiver->banner.targetheight },
+			    			{ "orientation",_minicapreceiver->banner.orientation },
+			    			{ "quirks",_minicapreceiver->banner.quirks },
+						};
+
+						//printf("banner %s\n",json.dump().c_str());
+						_server.send(_minicapreceiver->hdl, json.dump() , websocketpp::frame::opcode::text);
+		    		}
+		    	}
+		    	else if (_minicapreceiver->readSizeBytes < 4) {
+		    		uint8_t *pb = (uint8_t*)&_minicapreceiver->size;
+		    		int bc = 4 - _minicapreceiver->readSizeBytes;
+		    		if (bc > n) bc = n;
+		    		memcpy(pb,p,bc);
+		    		n -= bc;
+		    		p += bc;
+		    		_minicapreceiver->readSizeBytes += bc;
+		    		if ( _minicapreceiver->readSizeBytes == 4) {
+		    			_minicapreceiver->rsize = 0;
+		    			if ( _minicapreceiver->buffersize < _minicapreceiver->size ) {
+		    				if ( _minicapreceiver->buffer) {
+		    					delete[] _minicapreceiver->buffer;
+		    				}
+	    					_minicapreceiver->buffersize = 2 * _minicapreceiver->size;
+	    					_minicapreceiver->buffer = new uint8_t[_minicapreceiver->buffersize];
+
+		    			}
+		    		}
+
+		    	}
+		    	else {
+
+		    		if ( n + _minicapreceiver->rsize >= _minicapreceiver->size)
+		    		{
+		    			int bc = _minicapreceiver->size - _minicapreceiver->rsize;
+		    			memcpy(&_minicapreceiver->buffer[_minicapreceiver->rsize],p,bc);
+		    			p += bc;
+		    			n -= bc;
+		    			_minicapreceiver->rsize += bc;
+//		    			printf("%02X %02X\n",(int)_minicapreceiver->buffer[0],(int)_minicapreceiver->buffer[1]);
+		    			_minicapreceiver->readSizeBytes = 0;
+		    			_server.send(_minicapreceiver->hdl, _minicapreceiver->buffer,_minicapreceiver->size , websocketpp::frame::opcode::binary);
+
+		    		} else {
+		    			memcpy(&_minicapreceiver->buffer[_minicapreceiver->rsize],p,n);
+		    			_minicapreceiver->rsize += n;
+		    			n = 0;
+		    		}
+		    	}
+		    } 
+	    }
+	}
+}
+
+
+void minicap(websocketpp::connection_hdl hdl,  int id) {
+
+	if ( _minicapreceiver != NULL ) {
+		minicapclose();
+	} 
+
+	int sockfd, sockkb;
+    struct sockaddr_in serv_addr, serv_addr2;
+    struct hostent *server;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockkb = socket(AF_INET, SOCK_STREAM, 0);
+
+    bool err = false;
+
+ 
+    if (sockfd < 0 || sockkb < 0 ) {
+    	SendError(hdl, "ERROR opening socket" , id);
+    }
+        
+ 
+    server = gethostbyname("localhost");
+    if (server == NULL) {
+    	SendError(hdl, "ERROR , no such host" , id);   
+    }
+
+    if (  sockfd >= 0 && sockkb >=0 ) {
+
+	    bzero((char *) &serv_addr, sizeof(serv_addr));
+	    serv_addr.sin_family = AF_INET;
+	    bcopy((char *)server->h_addr, 
+	         (char *)&serv_addr.sin_addr.s_addr,
+	         server->h_length);
+	    serv_addr.sin_port = htons(1717);
+
+	    bzero((char *) &serv_addr2, sizeof(serv_addr2));
+	    serv_addr2.sin_family = AF_INET;
+	    bcopy((char *)server->h_addr, 
+	         (char *)&serv_addr2.sin_addr.s_addr,
+	         server->h_length);
+	    serv_addr2.sin_port = htons(1111);
+
+	    if (
+	    		(connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) || 
+	    		(connect(sockkb,(struct sockaddr *) &serv_addr2,sizeof(serv_addr2)) < 0)
+	    	) {
+	    	if ( sockfd >= 0 ) close(sockfd);
+			if ( sockkb >= 0 ) close(sockkb);
+    		SendError(hdl, "ERROR connecting" , id);  
+	    } else {
+
+	    	fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK);
+	    	fcntl(sockkb, F_SETFL, fcntl(sockkb, F_GETFL, 0) | O_NONBLOCK);
+
+
+
+	    	_minicapreceiver = new minicapreceiver();
+			_minicapreceiver->hdl = hdl;
+			_minicapreceiver->id = id;
+			_minicapreceiver->sockfd =sockfd;
+			_minicapreceiver->sockkb =sockkb;
+			_minicapreceiver->readBannerBytes = 0;
+			_minicapreceiver->buffersize = 0;
+			_minicapreceiver->buffer = NULL;
+
+
+	    }
+
+	} else {
+		if ( sockfd >= 0 ) close(sockfd);
+		if ( sockkb >= 0 ) close(sockkb);
+	}
+}
+
+void minitouch(websocketpp::connection_hdl hdl, std::string value, int id) {
+	if ( _minicapreceiver ) {
+		int n = write(_minicapreceiver->sockkb,value.c_str(),value.length());
+	}
+}
 
 //////////////////////////////////////////////////
 //////////////////////////////////////////////////
@@ -373,8 +685,21 @@ void on_message(websocketpp::connection_hdl hdl, server::message_ptr msg) {
 					} else {
 						SendError(hdl,  std::string("receiver need name"), id);
 					}
-				}else {
-					SendError(hdl, std::string("command not found"), id);
+				}else if ( command == "minicap") {
+					minicap(hdl, id);
+				}else if ( command == "minitouch") {
+					minitouch(hdl, value , id);
+				} /*else if ( command == "dbus") {
+					DBusConnection *d = dbus_start();
+					dbus_stop(d);
+
+					dbus();
+				}*/ else {
+					std::string err = "command not found (";
+					err += command;
+					err += ")";
+
+					SendError(hdl, err , id);
 				}
 			}
 		}  
@@ -413,7 +738,6 @@ void on_http(websocketpp::connection_hdl hdl) {
 		logstable.clear(); 
 
 		con->set_body(ret.c_str());
-
 	}
 	else {
 		con->set_body( 
