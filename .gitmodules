@@ -1,0 +1,6 @@
+[submodule "android/minitouch"]
+	path = android/minitouch
+	url = https://github.com/openstf/minitouch.git
+[submodule "android/minicap"]
+	path = android/minicap
+	url = https://github.com/openstf/minicap.git
